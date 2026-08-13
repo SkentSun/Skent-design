@@ -3,5 +3,6 @@
 !.gitignore
 !particle_sphere_demo.html
 !README.md
+!LICENSE
 !deploy/
 !deploy/index.html
