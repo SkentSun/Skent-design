@@ -1,0 +1,6 @@
+# 默认忽略项目目录内的所有文件，只保留要上传 git 的演示
+*
+!.gitignore
+!particle_sphere_demo.html
+!deploy/
+!deploy/index.html

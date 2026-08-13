@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fluidity, Made Tangible — Interactive Three.js Particle System</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #02040a; color: #fff; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    #canvas-container { position: absolute; inset: 0; }
+    .hero {
+      position: absolute; left: 8vw; top: calc(62% + 64px); transform: translateY(-50%);
+      width: min(92vw, 860px); text-align: left; pointer-events: none; z-index: 5;
+      transition: opacity .9s ease, transform .9s ease;
+    }
+    .hero.hidden { opacity: 0; transform: translateY(-50%) translateX(-24px); pointer-events: none; }
+    .hero h1 {
+      font-size: clamp(34px, 4.4vw, 80px); font-weight: 400; line-height: 1.28;
+      letter-spacing: -0.03em; margin-bottom: 24px;
+      background: linear-gradient(180deg, #ffffff 30%, #9fb9d6 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero p { font-size: clamp(14px, 1.1vw, 18px); line-height: 1.7; color: #8aa0bd; max-width: 480px; margin: 0 0 32px 0; }
+    .hero button {
+      pointer-events: auto; background: #fff; color: #02040a; border: none;
+      border-radius: 999px; padding: 14px 30px; font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .hero button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(90,148,250,.35);
+    }
+    .hero button:active { transform: translateY(0); }
+    .replay-hint {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 6;
+      font-size: 12px; color: #8aa0bd; opacity: 0; pointer-events: none; white-space: nowrap;
+      transition: opacity .6s ease .3s;
+    }
+    .replay-hint.show { opacity: .75; }
+    .replay-hint span { pointer-events: auto; }
+    .panel {
+      position: absolute; right: 24px; bottom: 24px; z-index: 3;
+      background: rgba(10,16,30,.55); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px; padding: 16px 18px; backdrop-filter: blur(10px);
+      width: 250px; font-size: 12px; color: #cdd9ec;
+    }
+    .panel h3 { font-size: 12px; font-weight: 600; margin-bottom: 12px; letter-spacing: .04em; opacity: .8; }
+    /* 每行：文字（标签+数值）在上，滑块在下 */
+    .row { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 7px; align-items: center; margin-bottom: 14px; }
+    .row label { grid-column: 1; grid-row: 1; }
+    .row > span { grid-column: 2; grid-row: 1; text-align: right; }
+    .row input[type=range],
+    .row input[type=color],
+    .row input[type=file] { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+    .row input[type=checkbox] { grid-column: 2; grid-row: 1; width: 16px; height: 16px; accent-color: #2b9bff; }
+    .controls-popup .row button { grid-column: 2; grid-row: 1; width: auto; }
+    /* 细滑块样式 */
+    .row input[type=range] {
+      -webkit-appearance: none; appearance: none; height: 3px;
+      background: rgba(255,255,255,.18); border-radius: 999px; outline: none; cursor: pointer;
+    }
+    .row input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 12px; height: 12px;
+      border-radius: 50%; background: #2b9bff; border: none; cursor: pointer;
+      box-shadow: 0 0 0 3px rgba(43,155,255,.20);
+    }
+    .row input[type=range]::-moz-range-thumb {
+      width: 12px; height: 12px; border-radius: 50%; background: #2b9bff; border: none; cursor: pointer;
+    }
+    .row input[type=range]::-moz-range-track { height: 3px; background: rgba(255,255,255,.18); border-radius: 999px; }
+    .row input[type=color] { height: 26px; border: 1px solid rgba(255,255,255,.2); border-radius: 6px; background: transparent; padding: 0; cursor: pointer; }
+    .divider { height: 1px; background: rgba(255,255,255,.12); margin: 4px 0 12px; }
+    .panel button {
+      width: 100%; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+      color: #fff; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 12px;
+    }
+    .panel button:hover { background: rgba(255,255,255,.16); }
+    .hint { margin-top: 8px; font-size: 11px; opacity: .6; line-height: 1.5; }
+    #debug { position: fixed; top: 8px; left: 8px; right: 8px; z-index: 100; color: #ff5e5e; font: 12px/1.4 monospace; white-space: pre-wrap; pointer-events: none; display: none; }
+    .dock {
+      position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 4;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .shapebar {
+      display: flex; gap: 6px; padding: 7px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 999px;
+      backdrop-filter: blur(22px) saturate(180%);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+      box-shadow: 0 8px 32px rgba(0,0,0,.35),
+                  inset 0 1px 0 rgba(255,255,255,.28),
+                  inset 0 -1px 0 rgba(0,0,0,.20);
+    }
+    .dock-settings {
+      width: 47px; height: 47px; padding: 0; flex: none;
+      display: flex; align-items: center; justify-content: center;
+      color: #cdd9ec; cursor: pointer;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 999px;
+      backdrop-filter: blur(22px) saturate(180%);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+      box-shadow: 0 8px 32px rgba(0,0,0,.35),
+                  inset 0 1px 0 rgba(255,255,255,.28),
+                  inset 0 -1px 0 rgba(0,0,0,.20);
+      transition: background .2s ease, color .2s ease, border-color .2s ease;
+    }
+    .dock-settings svg { width: 18px; height: 18px; display: block; }
+    .dock-settings:hover { background: rgba(255,255,255,.14); color: #fff; }
+    .dock-settings.active { background: #ffffff; color: #000000; }
+    .controls-popup {
+      position: fixed; right: auto; bottom: auto; z-index: 100;
+      width: 260px; max-height: 82vh; overflow-y: auto; overflow-x: hidden;
+      background: rgba(18,22,32,.92);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 16px; padding: 16px 18px;
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      box-shadow: 0 14px 50px rgba(0,0,0,.55);
+      opacity: 0; visibility: hidden; user-select: none;
+      transition: opacity .2s ease, visibility .2s;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent;
+    }
+    .controls-popup::-webkit-scrollbar { width: 6px; }
+    .controls-popup::-webkit-scrollbar-track { background: transparent; }
+    .controls-popup::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border-radius: 999px; }
+    .controls-popup::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.35); }
+    .controls-popup.open { opacity: 1; visibility: visible; }
+    .popup-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; cursor: move; user-select: none; }
+    .popup-head h3 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; opacity: .65; margin: 0; }
+    .drag-grip { color: rgba(255,255,255,.22); font-size: 14px; letter-spacing: 1px; }
+    .controls-popup .popup-close {
+      margin-left: auto; background: transparent; border: none; color: rgba(255,255,255,.5);
+      width: 24px; height: 24px; min-width: 24px; border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; padding: 0;
+      transition: color .2s ease, background .2s ease;
+    }
+    .controls-popup .popup-close:hover { color: #fff; background: rgba(255,255,255,.1); }
+    .shapebar button {
+      background: transparent; border: none; color: #cdd9ec;
+      padding: 8px 18px; border-radius: 999px; cursor: pointer; font-size: 13px;
+      font-weight: 300; text-transform: uppercase; letter-spacing: .04em;
+      transition: background .2s ease, color .2s ease;
+    }
+    .shapebar button:hover:not(.active) { background: rgba(255,255,255,.1); border-radius: 999px; }
+    .shapebar button.active { background: #ffffff; color: #000000; font-weight: 400; border-radius: 999px; }
+    /* 颜色预设点：位于 tab 上方，点击可快速切换粒子渐变配色 */
+    .color-presets {
+      position: fixed; left: 50%; bottom: 172px; transform: translateX(-50%);
+      z-index: 4; display: flex; gap: 12px; padding: 4px 0;
+    }
+    .color-dot {
+      width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .color-dot:hover { transform: translateY(-3px) scale(1.12); }
+    .color-dot.active { box-shadow: 0 0 0 2px rgba(255,255,255,.65), 0 2px 10px rgba(0,0,0,.5); }
+    /* ---------- 响应式：9:16 竖屏手机（宽高比 ≤ 3:4 均生效） ---------- */
+    @media (max-aspect-ratio: 3/4) {
+      .hero { left: 8vw; right: 8vw; top: calc(62% + 64px); transform: translateY(-50%); width: auto; text-align: left; }
+      .hero.hidden { transform: translateY(-50%) translateX(-24px); }
+      .hero h1 { font-size: clamp(28px, 7vw, 44px); margin-bottom: 16px; }
+      .hero p { font-size: 13px; max-width: none; margin-bottom: 22px; overflow-wrap: break-word; word-break: break-word; white-space: normal; }
+      .dock { gap: 10px; bottom: 40px; }
+      .shapebar { gap: 4px; padding: 6px; }
+      .shapebar button { padding: 5px 9px; font-size: 10px; letter-spacing: .02em; }
+      .dock-settings { width: 40px; height: 40px; }
+      .dock-settings svg { width: 16px; height: 16px; }
+      .color-presets { bottom: 130px; gap: 10px; padding: 7px 10px; }
+      .color-dot { width: 16px; height: 16px; }
+      .replay-hint { bottom: 92px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="debug"></div>
+  <script>
+    window.addEventListener('error', e => {
+      const d = document.getElementById('debug'); d.style.display = 'block';
+      d.textContent += (e.message || e.error) + ' at ' + (e.filename || '') + ':' + (e.lineno || '') + '\n';
+    });
+    window.addEventListener('unhandledrejection', e => {
+      const d = document.getElementById('debug'); d.style.display = 'block';
+      d.textContent += 'Unhandled: ' + e.reason + '\n';
+    });
+  </script>
+  <div id="canvas-container"></div>
+
+  <div class="hero" id="hero">
+    <h1>Fluidity,<br>Made Tangible</h1>
+    <p>Skent's AI Journey<br>An interactive Three.js particle system with real-time fluid dynamics — tune turbulence, viscosity, and density, then shape it with any SVG.</p>
+    <button id="playNow">Play Now</button>
+  </div>
+
+  <div class="replay-hint" id="replayHint">Drag to rotate · Move mouse to push particles · Tap ⚙ to adjust · <span style="color:#5a94fa;cursor:pointer" id="replayHero">Back to cover</span></div>
+
+  <script>
+    // 封面交互：Play Now 淡出 hero，露出完整可交互的粒子演示；replay 可重新显示封面
+    (function () {
+      const hero = document.getElementById('hero');
+      const replayHint = document.getElementById('replayHint');
+      const playBtn = document.getElementById('playNow');
+      const replayLink = document.getElementById('replayHero');
+      if (playBtn) playBtn.addEventListener('click', () => {
+        hero.classList.add('hidden');
+        setTimeout(() => { hero.style.display = 'none'; }, 900);
+        replayHint.classList.add('show');
+      });
+      if (replayLink) replayLink.addEventListener('click', () => {
+        hero.style.display = '';
+        requestAnimationFrame(() => hero.classList.remove('hidden'));
+        replayHint.classList.remove('show');
+      });
+    })();
+  </script>
+
+  <!-- 5 个随机粒子渐变配色点，点击可快速切换颜色（位于 tab 上方） -->
+  <div class="color-presets" id="colorPresets" title="Tap a swatch to apply a color gradient"></div>
+
+  <div class="dock" id="dock">
+    <div class="shapebar" id="shapebar">
+      <button data-shape="sphere" class="active">Sphere</button>
+      <button data-shape="box">Cube</button>
+      <button data-shape="torus">Torus</button>
+      <button data-shape="apple">Apple</button>
+      <button data-shape="nike">Nike</button>
+    </div>
+    <button class="dock-settings" id="controlsToggle" aria-expanded="false" title="Settings"><svg viewBox="0 0 1024 1024" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M511.9935 699.733c-102.4 0-187.733-85.333-187.733-187.733s85.333-187.733 187.733-187.733S699.7265 409.6 699.7265 512s-85.333 187.733-187.733 187.733z m472.177-250.311c-5.689-22.756-22.756-39.822-45.511-45.511l-11.378-5.689c-34.133-11.378-68.267-34.133-91.022-68.267s-22.756-73.956-17.067-113.778l5.689-11.378c5.689-17.067 0-45.511-17.067-62.578 0 0-17.067-11.378-56.889-34.133s-56.889-28.444-56.889-28.444c-22.756-5.689-45.511 0-62.578 17.067l-11.378 11.378c-28.444 22.756-68.267 39.822-108.089 39.822s-79.644-17.067-108.089-39.822l-5.689-17.067c-17.067-11.378-45.511-22.756-62.578-11.378 0 0-17.067 5.689-56.889 28.444s-56.889 34.133-56.889 34.133c-17.067 17.067-28.444 39.822-22.756 62.578l5.689 17.067c11.378 34.133 5.689 73.956-17.067 113.778-22.756 28.444-51.2 51.2-91.022 62.578l-11.378 5.689c-22.756 0-39.822 22.756-45.511 45.511 0 0-5.689 17.067-5.689 62.578s5.689 62.578 5.689 62.578c5.689 22.756 22.756 39.822 45.511 45.511l11.378 5.689c34.133 11.378 68.267 34.133 91.022 68.267s22.756 73.956 17.067 113.778l-5.689 11.378c-5.689 17.067 0 45.511 17.067 62.578 0 0 17.067 11.378 56.889 34.133s56.889 28.444 56.889 28.444c22.756 5.689 45.511 0 62.578-17.067l11.378-11.378c28.444-28.444 62.578-39.822 108.089-39.822 39.822 0 79.644 17.067 108.089 39.822l11.378 11.378c17.067 17.067 39.822 22.756 62.578 17.067 0 0 17.067-5.689 56.889-28.444s56.889-34.133 56.889-34.133 22.756-39.822 17.067-62.578l-5.689-17.067c-11.378-34.133-5.689-73.956 17.067-108.089s51.2-56.889 91.022-68.267l17.067-5.689c22.756-5.689 39.822-22.756 45.511-45.511 0 0 5.689-17.067 5.689-62.578-5.689-45.511-11.378-62.578-11.378-62.578z"></path></svg></button>
+  </div>
+
+  <div class="controls-popup panel" id="controlsPopup">
+    <div class="popup-head" id="popupHead"><h3>Fluid Particle Console</h3><span class="drag-grip" title="Drag to move">⠿</span><button class="popup-close" id="popupClose" aria-label="Close">✕</button></div>
+    <div class="row"><label>Turbulence</label><input id="turb" type="range" min="0" max="3" step="0.05" value="2.7"><span id="turbv" style="width:42px;flex:none;text-align:right">2.70</span></div>
+    <div class="row"><label>Viscosity</label><input id="visc" type="range" min="0.9" max="0.995" step="0.001" value="0.995"><span id="viscv" style="width:42px;flex:none;text-align:right">0.995</span></div>
+    <div class="row"><label>Bloom</label><input id="bloom" type="range" min="0" max="2.5" step="0.05" value="0.15"><span id="bloomv" style="width:42px;flex:none;text-align:right">0.15</span></div>
+    <div class="row"><label>Spin</label><input id="spin" type="range" min="0" max="2" step="0.05" value="0.1"><span id="spinv" style="width:42px;flex:none;text-align:right">0.10</span></div>
+    <div class="row"><label>Emission</label><input id="emit" type="range" min="0" max="2.5" step="0.05" value="0.6"><span id="emitv" style="width:42px;flex:none;text-align:right">0.60</span></div>
+    <div class="row"><label>Particle Size</label><input id="size" type="range" min="0.03" max="0.22" step="0.005" value="0.05"><span id="sizev" style="width:42px;flex:none;text-align:right">0.050</span></div>
+    <div class="row"><label>Speed</label><input id="speed" type="range" min="0" max="3" step="0.02" value="3"><span id="speedv" style="width:42px;flex:none;text-align:right">3.00</span></div>
+    <div class="row"><label>Mouse Force</label><input id="mouseForce" type="range" min="0" max="3" step="0.05" value="0.15"><span id="mouseForcev" style="width:42px;flex:none;text-align:right">0.15</span></div>
+    <div class="row"><label>Gravity</label><input id="gravity" type="range" min="0" max="4" step="0.05" value="0"><span id="gravv" style="width:42px;flex:none;text-align:right">0.00</span></div>
+    <div class="row"><label>Gravity Dir</label><input id="gravdir" type="range" min="0" max="360" step="1" value="360"><span id="gravdirv" style="width:46px;flex:none;text-align:right">360°</span></div>
+    <div class="row"><label>Count</label><input id="count" type="range" min="0" max="5" step="1" value="5"><span id="countv" style="width:42px;flex:none;text-align:right">800K</span></div>
+    <div class="row"><label>Gap</label><input id="gap" type="range" min="0.5" max="1.0" step="0.01" value="1"><span id="gapv" style="width:42px;flex:none;text-align:right">100%</span></div>
+    <div class="row"><label>SVG</label><input id="svgfile" type="file" accept=".svg,image/svg+xml" style="flex:1;font-size:11px;color:#cdd9ec;"></div>
+    <div class="row" style="align-items:center"><label>Mirror X</label><input id="mirrorx" type="checkbox" style="margin-left:4px;width:16px;height:16px;accent-color:#5a94fa"></div>
+    <div class="row"><label>Thickness</label><input id="particleDepth" type="range" min="0" max="0.8" step="0.02" value="0.36"><span id="particleDepthv" style="width:42px;flex:none;text-align:right">0.36</span></div>
+    <div class="divider"></div>
+    <div class="row"><label>Color Low</label><input id="colA" type="color" value="#3457d5"></div>
+    <div class="row"><label>Color Mid</label><input id="colMid" type="color" value="#5a94fa"></div>
+    <div class="row"><label>Color High</label><input id="colB" type="color" value="#c8f0ff"></div>
+    <div class="row"><label>Background</label><input id="bg" type="color" value="#02040a"></div>
+    <div class="row"><label>Bottom Glow</label><input id="bgGlow" type="color" value="#0B1128"></div>
+    <div class="divider"></div>
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <label>All Params (JSON)</label>
+      <button id="copyParams" style="flex:none;width:auto;padding:4px 10px;font-size:11px;margin:0">Copy All Params</button>
+    </div>
+    <pre id="paramDump" style="margin:6px 0 0;padding:8px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#9fd0ff;font-size:10px;line-height:1.45;max-height:230px;overflow:auto;white-space:pre;font-family:ui-monospace,Menlo,Consolas,monospace"></pre>
+    <button id="pause">Pause / Play</button>
+    <div class="hint">Fluid advection · Built-in / upload SVG to fill particles · Move mouse to push · Drag to rotate</div>
+    </div>
+
+  <script>
+    // 配置菜单：默认收起，点击底部「setting」按钮展开为可拖拽的浮动 popup；点击外部或关闭按钮收起
+    (function () {
+      const toggle = document.getElementById('controlsToggle');
+      const popup = document.getElementById('controlsPopup');
+      const head = document.getElementById('popupHead');
+      const closeBtn = document.getElementById('popupClose');
+      if (!toggle || !popup) return;
+      let positioned = false;
+      function placeInitial() {
+        if (positioned) return;
+        positioned = true;
+        const w = popup.offsetWidth || 300, h = popup.offsetHeight || 440;
+        const x = Math.max(12, (window.innerWidth - w) / 2);
+        const y = Math.max(12, Math.min(window.innerHeight - h - 12, window.innerHeight * 0.16));
+        popup.style.left = x + 'px';
+        popup.style.top = y + 'px';
+      }
+      function setOpen(open) {
+        if (open) placeInitial();
+        popup.classList.toggle('open', open);
+        toggle.classList.toggle('active', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setOpen(!popup.classList.contains('open'));
+      });
+      if (closeBtn) closeBtn.addEventListener('click', () => setOpen(false));
+      document.addEventListener('click', (e) => {
+        if (!popup.classList.contains('open')) return;
+        if (popup.contains(e.target) || toggle.contains(e.target)) return;
+        setOpen(false);
+      });
+      // 拖拽：在标题栏按下拖动，弹窗可浮动到任意位置（限制在视口内）
+      if (head) {
+        let dragging = false, ox = 0, oy = 0;
+        const onMove = (cx, cy) => {
+          if (!dragging) return;
+          const w = popup.offsetWidth, h = popup.offsetHeight;
+          let x = cx - ox, y = cy - oy;
+          x = Math.max(4, Math.min(window.innerWidth - w - 4, x));
+          y = Math.max(4, Math.min(window.innerHeight - h - 4, y));
+          popup.style.left = x + 'px';
+          popup.style.top = y + 'px';
+        };
+        head.addEventListener('mousedown', (e) => {
+          if (e.target.closest('.popup-close')) return;
+          dragging = true;
+          const r = popup.getBoundingClientRect();
+          ox = e.clientX - r.left; oy = e.clientY - r.top;
+          popup.style.transition = 'none';
+          e.preventDefault();
+        });
+        window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+        window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', () => { if (dragging) { dragging = false; popup.style.transition = ''; } });
+      }
+    })();
+  </script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
+    import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+
+    const container = document.getElementById('canvas-container');
+    const R = 2.2;                 // 刚体碰撞球半径
+    let WIDTH = 128;             // 模拟纹理边长（运行时可改）
+    let PARTICLES = WIDTH * WIDTH;
+
+    // ---------- 形状系统（球体 / 立方体 / 圆环 / 自定义 SVG 拉伸棱柱） ----------
+    const SDF_N = 1024;          // 距离场纹理分辨率（与顶点数无关，细分足够细；300K 粒子下仍保证边缘清晰）
+    const SDF_SPAN = 4.0;        // 世界坐标 [-SDF_SPAN, SDF_SPAN] 映射到整张纹理。
+                                 // 必须 >= SVG 归一化半幅(3.6) + 余量，否则放大后的 SVG 被裁切。
+    let shapeMode = 'sphere';    // sphere | box | torus | svg
+    let shapeInt = 0;            // 对应着色器 uShape
+    let svgContours = null;      // [[[x,y],...],...] 归一化到半幅 1.8 的多轮廓（复合图形）
+    let svgShapes = null;        // SVGLoader 解析出的填充 Shape 数据
+    let rawSvgContours = null;   // 上传后保留原始轮廓，供镜像开关重建 SDF
+    let svgBounds = null;        // {xMin,xMax,yMin,yMax}
+    let carrierSdfArray = null;         // Float32Array(SDF_N*SDF_N) 世界坐标有符号距离（内部为负）
+    // SVG 距离场纹理：1 通道浮点；未上传 SVG 时为 null（球体/立方/圆环不受影响）
+    let rigidSdfTex = null;
+
+    // ---------- 内置 SVG 模板（无需上传，直接作为形状选项） ----------
+    const SVG_TEMPLATES = {
+      apple: `<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg t="1786542302981" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4605" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="200"><path d="M747.4 535.7c-0.4-68.2 30.5-119.6 92.9-157.5-34.9-50-87.7-77.5-157.3-82.8-65.9-5.2-138 38.4-164.4 38.4-27.9 0-91.7-36.6-141.9-36.6C273.1 298.8 163 379.8 163 544.6c0 48.7 8.9 99 26.7 150.8 23.8 68.2 109.6 235.3 199.1 232.6 46.8-1.1 79.9-33.2 140.8-33.2 59.1 0 89.7 33.2 141.9 33.2 90.3-1.3 167.9-153.2 190.5-221.6-121.1-57.1-114.6-167.2-114.6-170.7z" p-id="4606"></path><path d="M642.3 230.7c50.7-60.2 46.1-115 44.6-134.7-44.8 2.6-96.6 30.5-126.1 64.8-32.5 36.8-51.6 82.3-47.5 133.6 48.4 3.7 92.6-21.2 129-63.7z" p-id="4607"></path></svg>`,
+      nike: `<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg t="1786542105047" class="icon" viewBox="0 0 2944 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1683" xmlns:xlink="http://www.w3.org/1999/xlink" width="575" height="200"><path d="M811.36 566.528c-176.608 45.92-318.976 39.68-399.552-18.56C204.032 395.84 362.624 90.88 419.04 0 317.44 111.264 216.576 222.88 137.792 344.64 13.696 534.816-39.04 743.456 44.736 877.216c150.368 241.408 511.2 130.048 741.28 32.864L2921.28 8.992 811.36 566.528z" fill="#2c2c2c" p-id="1684"></path></svg>`
+    };
+    // 缓存内置模板的 SDF 计算结果（首次切换时构建，之后即时切换，不重复计算、不 dispose 纹理）
+    const svgTemplateCache = {};   // name -> { raw, bounds, carrier, tex }
+    function buildSvgTemplate(name) {
+      if (name in svgTemplateCache) return svgTemplateCache[name];
+      const raw = parseSVGToContours(SVG_TEMPLATES[name]);
+      if (!raw || !raw.length) { svgTemplateCache[name] = null; return null; }
+      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+      for (const c of raw) for (const [x, y] of c) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const half = Math.max((maxX - minX) / 2, (maxY - minY) / 2) || 1;
+      const scale = 3.6 / half;   // 与 setSvgContours 一致：SVG 体积放大 1 倍（2×）
+      const norm = raw.map(c => c.map(([x, y]) => [(x - cx) * scale, -(y - cy) * scale]));
+      let bxMin = 1e9, bxMax = -1e9, byMin = 1e9, byMax = -1e9;
+      for (const c of norm) for (const [x, y] of c) { bxMin = Math.min(bxMin, x); bxMax = Math.max(bxMax, x); byMin = Math.min(byMin, y); byMax = Math.max(byMax, y); }
+      const bounds = { xMin: bxMin, xMax: bxMax, yMin: byMin, yMax: byMax };
+      const carrier = erodeSDF(buildSDFArray(norm), 0.02);
+      const tex = createSDFTexture(buildSDFArray(norm));
+      const snap = { raw, bounds, carrier, tex };
+      svgTemplateCache[name] = snap;
+      return snap;
+    }
+    function loadSvgTemplate(name) {
+      const snap = buildSvgTemplate(name);
+      if (!snap) return false;
+      rawSvgContours = snap.raw;
+      svgBounds = snap.bounds;
+      carrierSdfArray = snap.carrier;
+      rigidSdfTex = snap.tex;
+      return true;
+    }
+    // 当前选中的形状 key（球/立方/圆环/apple/nike），用于 tab 高亮与防重复切换
+    let currentShapeKey = 'sphere';
+
+    // ---------- 渲染器 / 场景 / 相机 ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    // 背景：以用户所选纯色为基调，向下渐亮并在底部中心加柔光，营造“光从底部照上来”的氛围。
+    // 渐变颜色可在配置栏动态调节（Background 底色 + Bottom Glow 底部受光色）。
+    // 用 CanvasTexture 作为 scene.background，可无缝融入 EffectComposer 后处理管线（无需透明画布）。
+    let bgBase = '#02040a';
+    let bgGlow = '#0B1128'; // 默认底部受光色（R11 G17 B40）；非 null 即固定，不再自动推导
+    function autoGlow(hex) { return '#' + new THREE.Color(hex).clone().lerp(new THREE.Color(0xffffff), 0.40).getHexString(); }
+    function makeBgTexture(baseHex, glowHex) {
+      const base = new THREE.Color(baseHex);
+      const glow = new THREE.Color(glowHex || autoGlow(baseHex));
+      const c = document.createElement('canvas'); c.width = 32; c.height = 256;
+      const g = c.getContext('2d');
+      const gh = glow.getHexString();
+      const gr = parseInt(gh.slice(0, 2), 16), gg = parseInt(gh.slice(2, 4), 16), gb = parseInt(gh.slice(4, 6), 16);
+      const lin = g.createLinearGradient(0, 0, 0, 256);
+      lin.addColorStop(0.0, '#' + base.getHexString());
+      lin.addColorStop(0.5, '#' + base.getHexString());
+      lin.addColorStop(1.0, '#' + glow.getHexString());
+      g.fillStyle = lin; g.fillRect(0, 0, 32, 256);
+      const rad = g.createRadialGradient(16, 256, 0, 16, 256, 230);
+      rad.addColorStop(0.0, 'rgba(' + gr + ',' + gg + ',' + gb + ',0.55)');
+      rad.addColorStop(1.0, 'rgba(' + gr + ',' + gg + ',' + gb + ',0)');
+      g.fillStyle = rad; g.fillRect(0, 0, 32, 256);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+    let _bgTex = null;
+    function setBackground(baseHex, glowHex) {
+      bgBase = baseHex;
+      if (glowHex !== undefined) bgGlow = glowHex;
+      const t = makeBgTexture(baseHex, glowHex !== undefined ? glowHex : bgGlow);
+      if (_bgTex) _bgTex.dispose();
+      _bgTex = t;
+      scene.background = t;
+      document.body.style.background = baseHex;
+    }
+    setBackground('#02040a', '#0B1128');   // 启动即应用默认底部受光色
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(0, 0, 7.5);
+
+    // 竖屏/窄屏自适应：横向视场随宽高比缩小，模型（外接半径≈2.2）在 9:16 等窄比例下
+    // 会被左右裁切，故在窄屏时把相机后移，使整团粒子始终完整居中；宽屏保持原 7.5 不变。
+    const MODEL_RADIUS = 2.2;
+    const MODEL_SCALE = 0.85;   // 基础 mesh 初始化大小整体缩小 15%（仅影响渲染，相机取景距离不变）
+    function fitCameraToAspect() {
+      const fov = camera.fov * Math.PI / 180;
+      const aspect = camera.aspect;
+      const distH = MODEL_RADIUS / (Math.tan(fov / 2) * aspect);
+      camera.position.z = Math.max(7.5, distH * 1.08);
+    }
+    fitCameraToAspect();
+
+    // 模型初始化位置在屏幕上整体上移 128px：仅平移投影（view offset），背景与交互不受影响。
+    function applyViewShift() {
+      camera.setViewOffset(innerWidth, innerHeight, 0, 128, innerWidth, innerHeight);
+    }
+    applyViewShift();
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.08;
+    controls.minDistance = 4; controls.maxDistance = 16;
+
+    let group = new THREE.Group();   // 自转用：模型切换时整个替换，杜绝旧粒子层残留
+    group.scale.setScalar(MODEL_SCALE);   // 基础 mesh 初始化大小（缩小 15%）
+    scene.add(group);
+
+    // ---------- 共享 GLSL：3D simplex 噪声 + curl 噪声 ----------
+    const noiseGLSL = /* glsl */`
+      vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+      vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+      vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+      vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+      float snoise(vec3 v){
+        const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+        vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+        vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+        vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+        i=mod289(i);
+        vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+        float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+        vec4 j=p-49.0*floor(p*ns.z*ns.z);
+        vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+        vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+        vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+        vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+        vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+        vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+        vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+        p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+        vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+        return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+      }
+      vec3 snoiseVec3(vec3 x){
+        return vec3(snoise(x), snoise(vec3(x.y-19.1,x.z+33.4,x.x+47.2)), snoise(vec3(x.z+74.2,x.x-124.5,x.y+99.4)));
+      }
+      // 无散度 curl 噪声 —— 流体卷曲翻涌的核心
+      vec3 curlNoise(vec3 p){
+        const float e=0.1; vec3 dx=vec3(e,0.0,0.0), dy=vec3(0.0,e,0.0), dz=vec3(0.0,0.0,e);
+        vec3 px0=snoiseVec3(p-dx), px1=snoiseVec3(p+dx);
+        vec3 py0=snoiseVec3(p-dy), py1=snoiseVec3(p+dy);
+        vec3 pz0=snoiseVec3(p-dz), pz1=snoiseVec3(p+dz);
+        float x=py1.z-py0.z-pz1.y+pz0.y;
+        float y=pz1.x-pz0.x-px1.z+px0.z;
+        float z=px1.y-px0.y-py1.x+py0.x;
+        return normalize(vec3(x,y,z)/(2.0*e)+1e-6);
+      }
+    `;
+
+    // 形状 SDF（供着色器做刚体碰撞 / 边界投影）
+    const shapeGLSL = /* glsl */`
+      uniform int   uShape;        // 0 球 1 立方 2 圆环 3 SVG 拉伸棱柱
+      uniform vec3  uBox;          // 立方体半边长
+      uniform float uTorusR; uniform float uTorusr;
+      uniform sampler2D uSdfTex;   // 有符号距离场纹理（SVG 轮廓，世界坐标距离，内部为负）
+      uniform float uSdfSpan;      // 纹理覆盖的世界半幅（[-uSdfSpan, uSdfSpan]）
+      uniform float uThickness;    // 拉伸棱柱 Z 半厚
+      float sdSphere(vec3 p){ return length(p) - ${R}; }
+      float sdBox(vec3 p){ vec3 q=abs(p)-uBox; return length(max(q,0.0))+min(max(q.x,max(q.y,q.z)),0.0); }
+      float sdTorus(vec3 p){ vec2 q=vec2(length(p.xz)-uTorusR,p.y); return length(q)-uTorusr; }
+      // SVG 拉伸棱柱 = 距离场 ∩ Z 平板（复合图形 / 孔洞 / 任意曲率均支持）
+      float sdSvg(vec3 p){
+        vec2 uv = p.xy/uSdfSpan + 0.5;
+        // DataTexture 的首行对应纹理底部；翻转 Y 后与 Canvas/SVG 的采样方向一致。
+        vec2 texUv = vec2(clamp(uv.x,0.0,1.0), 1.0-clamp(uv.y,0.0,1.0));
+        float d = texture2D(uSdfTex, texUv).r;               // 世界坐标有符号距离（内部为负）
+        // 避免 clamp 在纹理外形成零梯度平台，确保游离粒子始终能获得回归法线。
+        vec2 outside = max(abs(p.xy)-vec2(uSdfSpan),0.0);
+        d += length(outside);
+        // 零厚度是严格二维粒子模式：只使用 SVG 的二维距离场，并由位置着色器锁定 z=0。
+        // 若仍与零厚度 Z 平板取交集，内部距离会恒为 0，硬边界逻辑将无法移动粒子。
+        if (uThickness <= 0.0001) return d;
+        return max(d, abs(p.z) - uThickness);
+      }
+      float shapeSDF(vec3 p){
+        if(uShape==0) return sdSphere(p);
+        else if(uShape==1) return sdBox(p);
+        else if(uShape==2) return sdTorus(p);
+        else return sdSvg(p);
+      }
+      vec3 shapeNormal(vec3 p){
+        float e=0.05;
+        // SVG 平面模式（零厚度）：SDF 与 z 无关，用 2D 梯度即可，省去 2 次纹理采样。
+        if (uShape == 3 && uThickness <= 0.0001) {
+          vec2 g = vec2(
+            shapeSDF(p+vec3(e,0.0,0.0))-shapeSDF(p-vec3(e,0.0,0.0)),
+            shapeSDF(p+vec3(0.0,e,0.0))-shapeSDF(p-vec3(0.0,e,0.0))
+          );
+          float len = length(g);
+          return len > 1e-6 ? normalize(vec3(g, 0.0)) : vec3(0.0);
+        }
+        vec3 g = vec3(
+          shapeSDF(p+vec3(e,0.0,0.0))-shapeSDF(p-vec3(e,0.0,0.0)),
+          shapeSDF(p+vec3(0.0,e,0.0))-shapeSDF(p-vec3(0.0,e,0.0)),
+          shapeSDF(p+vec3(0.0,0.0,e))-shapeSDF(p-vec3(0.0,0.0,e))
+        );
+        float len = length(g);
+        return len > 1e-6 ? g / len : vec3(0.0);
+      }
+    `;
+
+    // ---------- 形状相关的 JS 辅助（初始化撒点 / SVG 解析） ----------
+    // 在指定形状内部随机取一点
+    function samplePoint() {
+      if (shapeMode === 'sphere') {
+        const rr = R * params.gap;
+        for (let k = 0; k < 200; k++) {
+          const x = (Math.random() * 2 - 1) * rr, y = (Math.random() * 2 - 1) * rr, z = (Math.random() * 2 - 1) * rr;
+          if (x * x + y * y + z * z <= rr * rr) return [x, y, z];
+        }
+        return [0, 0, 0];
+      } else if (shapeMode === 'box') {
+        const b = 1.8;
+        return [(Math.random() * 2 - 1) * b, (Math.random() * 2 - 1) * b, (Math.random() * 2 - 1) * b];
+      } else if (shapeMode === 'torus') {
+        const R1 = 1.6, r = 0.6;
+        const th = Math.random() * Math.PI * 2, ph = Math.random() * Math.PI * 2, rad = r * Math.cbrt(Math.random());
+        const x = (R1 + rad * Math.cos(th)) * Math.cos(ph);
+        const y = rad * Math.sin(th);
+        const z = (R1 + rad * Math.cos(th)) * Math.sin(ph);
+        return [x, y, z];
+      } else { // svg 拉伸棱柱
+        const b = svgBounds, th = params.particleDepth;
+        for (let k = 0; k < 1500; k++) {
+          const x = b.xMin + Math.random() * (b.xMax - b.xMin);
+          const y = b.yMin + Math.random() * (b.yMax - b.yMin);
+          // 厚度为 0 时严格落在单一平面，避免透视旋转后出现前后两层轮廓。
+          const z = th > 0 ? (Math.random() * 2 - 1) * th : 0;
+          if (sdfAt(x, y) <= 0) return [x, y, z];   // 距离场 <=0 即在壳内
+        }
+        return [0, 0, 0];
+      }
+    }
+    // 解析上传的 SVG 文本 -> 多个归一化轮廓（复合图形：多条 path / 多子路径 / 任意曲线）
+    function parsePointsAttr(str) {
+      const nums = (str.match(/-?\d*\.?\d+(?:[eE]-?\d+)?/g) || []).map(Number);
+      const pts = []; for (let i = 0; i + 1 < nums.length; i += 2) pts.push([nums[i], nums[i + 1]]);
+      return pts;
+    }
+    // 只解析 SVG 的填充区域。stroke（包括仅描边路径）完全不参与粒子轮廓。
+    function hasVisibleFill(el) {
+      const style = el.getAttribute('style') || '';
+      const styleMap = {};
+      style.split(';').forEach(rule => {
+        const i = rule.indexOf(':');
+        if (i > 0) styleMap[rule.slice(0, i).trim().toLowerCase()] = rule.slice(i + 1).trim().toLowerCase();
+      });
+      const fill = (styleMap.fill ?? el.getAttribute('fill') ?? 'black').trim().toLowerCase();
+      const opacity = Number(styleMap.opacity ?? el.getAttribute('opacity') ?? 1);
+      const fillOpacity = Number(styleMap['fill-opacity'] ?? el.getAttribute('fill-opacity') ?? 1);
+      return fill !== 'none' && fill !== 'transparent' && opacity > 0 && fillOpacity > 0;
+    }
+    function parseSVGToContours(svgText) {
+      // SVGLoader 会正确处理 transform、复合路径、孔洞、路径方向和 fill-rule。
+      // 不再手动按 M 命令拆 path，避免同一填充被错误解释成多层轮廓。
+      const data = new SVGLoader().parse(svgText);
+      const shapes = [];
+      for (const path of data.paths) {
+        const fill = String(path.userData?.style?.fill ?? '').toLowerCase();
+        const opacity = Number(path.userData?.style?.fillOpacity ?? 1);
+        if (fill === 'none' || fill === 'transparent' || opacity <= 0) continue;
+        shapes.push(...SVGLoader.createShapes(path));
+      }
+      if (!shapes.length) return null;
+
+      const raw = [];
+      for (const shape of shapes) {
+        const outer = shape.getPoints(192).map(p => [p.x, p.y]);
+        if (outer.length >= 3) raw.push(outer);
+        for (const hole of shape.holes) {
+          const ring = hole.getPoints(192).map(p => [p.x, p.y]);
+          if (ring.length >= 3) raw.push(ring);
+        }
+      }
+      svgShapes = shapes;
+      return raw.length ? raw : null;
+    }
+    // 归一化（所有轮廓统一 bbox -> 半幅 1.8，Y 翻转使 SVG 视觉上不颠倒）并构建有符号距离场
+    function setSvgContours(rawContours, mirrorX = false) {
+      let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+      for (const c of rawContours) for (const [x, y] of c) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const half = Math.max((maxX - minX) / 2, (maxY - minY) / 2) || 1;
+      const scale = 3.6 / half;   // 归一化半幅 1.8 -> 3.6：SVG 体积相对原尺寸放大 1 倍（2×）
+      const sx = mirrorX ? -1 : 1;
+      const norm = rawContours.map(c => c.map(([x, y]) => [sx * (x - cx) * scale, -(y - cy) * scale]));
+      svgContours = norm;
+      const bnd = { xMin: 1e9, xMax: -1e9, yMin: 1e9, yMax: -1e9 };
+      for (const c of norm) for (const [x, y] of c) { bnd.xMin = Math.min(bnd.xMin, x); bnd.xMax = Math.max(bnd.xMax, x); bnd.yMin = Math.min(bnd.yMin, y); bnd.yMax = Math.max(bnd.yMax, y); }
+      svgBounds = bnd;
+      if (rigidSdfTex) rigidSdfTex.dispose();
+      // 明确生成两份独立数据：承载体供 CPU 撒点，刚体供 GPU 碰撞。
+      // 承载体做腐蚀（边界向内收 0.02 世界单位），避免粒子在约束壳表面生成/堆积。
+      // 0.02 已足够让硬边界完全落在渲染淡出带（d > -0.08 全透明）里，同时给可见核心留出更多自由流动空间。
+      carrierSdfArray = erodeSDF(buildSDFArray(norm), 0.02);
+      const rigidSdfArray = buildSDFArray(norm);
+      rigidSdfTex = createSDFTexture(rigidSdfArray);
+    }
+    // ---------- 有符号距离场（SDF）：任意复合图形 / 孔洞均正确 ----------
+    function edt1d(f) {
+      const n = f.length; const d = new Float64Array(n); const v = new Int32Array(n); const z = new Float64Array(n + 1);
+      let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+      for (let q = 1; q < n; q++) {
+        let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+        while (s <= z[k]) { k--; s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+        k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+      }
+      k = 0;
+      for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; const dd = q - v[k]; d[q] = dd * dd + f[v[k]]; }
+      return d;
+    }
+    function edt2d(binary, N, isTarget) {
+      const INF = 1e20; const f = new Float64Array(N * N);
+      for (let i = 0; i < N * N; i++) f[i] = binary[i] === isTarget ? 0 : INF;
+      for (let y = 0; y < N; y++) { const row = f.subarray(y * N, (y + 1) * N); const d = edt1d(row); for (let x = 0; x < N; x++) f[y * N + x] = d[x]; }
+      const g = new Float64Array(N * N);
+      for (let x = 0; x < N; x++) { const col = new Float64Array(N); for (let y = 0; y < N; y++) col[y] = f[y * N + x]; const d = edt1d(col); for (let y = 0; y < N; y++) g[y * N + x] = d[y]; }
+      const out = new Float32Array(N * N);
+      for (let i = 0; i < N * N; i++) out[i] = Math.sqrt(Math.max(0, g[i]));
+      return out;
+    }
+    function buildSDFArray(contours) {
+      const N = SDF_N, S = SDF_SPAN;
+      const cv = document.createElement('canvas'); cv.width = cv.height = N;
+      const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, N, N); ctx.fillStyle = '#fff';
+      const toPx = (wx, wy) => [(wx / (2 * S) + 0.5) * N, (1 - (wy / (2 * S) + 0.5)) * N];
+      ctx.beginPath();
+      for (const c of contours) for (let i = 0; i < c.length; i++) { const p = toPx(c[i][0], c[i][1]); if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); }
+      ctx.fill('evenodd');   // even-odd：孔洞 / 复合图形自动正确处理
+      const img = ctx.getImageData(0, 0, N, N).data;
+      const inside = new Uint8Array(N * N);
+      for (let i = 0; i < N * N; i++) inside[i] = img[i * 4 + 3] > 128 ? 1 : 0;
+      const dOut = edt2d(inside, N, 0), dIn = edt2d(inside, N, 1);
+      const scale = (2 * S) / N;
+      const out = new Float32Array(N * N);
+      for (let i = 0; i < N * N; i++) out[i] = (inside[i] ? -dOut[i] : dIn[i]) * scale;
+      return out;
+    }
+    function createSDFTexture(array) {
+      const tex = new THREE.DataTexture(array, SDF_N, SDF_N, THREE.RedFormat, THREE.FloatType);
+      tex.minFilter = tex.magFilter = THREE.NearestFilter;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.needsUpdate = true;
+      return tex;
+    }
+    // 对 SDF 做形态学腐蚀：把边界向内部收缩 margin（世界坐标）。
+    // 承载体（撒点用）比刚体（碰撞用）小一圈，这样粒子只在内部生成，
+    // 不会贴着约束壳表面堆积成可见的“第二层”。
+    function erodeSDF(sdf, margin) {
+      const out = new Float32Array(sdf.length);
+      for (let i = 0; i < sdf.length; i++) out[i] = sdf[i] + margin;
+      return out;
+    }
+    function sdfAt(wx, wy) {
+      const N = SDF_N, S = SDF_SPAN;
+      const u = wx / (2 * S) + 0.5, v = wy / (2 * S) + 0.5;
+      if (u < 0 || u > 1 || v < 0 || v > 1) return 1e3;
+      const x0 = Math.max(0, Math.min(N - 1, Math.floor(u * N - 0.5)));
+      // 与 shader 的纹理 Y 翻转保持一致。
+      const y0 = Math.max(0, Math.min(N - 1, Math.floor((1 - v) * N - 0.5)));
+      return carrierSdfArray[y0 * N + x0];
+    }
+
+    // ---------- 共享资源（不随粒子数变化） ----------
+    const renderUniforms = {
+      texturePosition: { value: null },
+      textureVelocity: { value: null },
+      uTime: { value: 0 },
+      uSize: { value: 0.05 },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+      uEmit: { value: 1.0 },
+      uColorA: { value: new THREE.Color('#3457d5') },
+      uColorMid: { value: new THREE.Color('#5a94fa') },
+      uColorB: { value: new THREE.Color('#c8f0ff') },
+      // 渲染期边界淡出：需要 SDF / 形状相关 uniform 来计算粒子到约束壳的距离。
+      uShape: { value: shapeInt },
+      uBox: { value: new THREE.Vector3(1.8, 1.8, 1.8) },
+      uTorusR: { value: 1.6 },
+      uTorusr: { value: 0.6 },
+      uSdfTex: { value: rigidSdfTex },
+      uSdfSpan: { value: SDF_SPAN },
+      uThickness: { value: 0 },       // 默认值，params 定义后再同步成 params.particleDepth
+      uBoundaryFade: { value: 0.08 },  // 从约束壳向内 0..uBoundaryFade 距离做 alpha 淡出
+      uSvgBoost: { value: 3.8 },       // SVG 颜色亮度补偿
+      uSvgAlpha: { value: 3.2 },       // SVG 不透明度补偿（在边界淡出之前施加，使可见粒子整体更亮，贴近普通 mesh）
+      uGlobalFade: { value: 1.0 }     // 形状切换时的整体淡入淡出（1=正常，0=全透明）
+    };
+
+    // ---------- 模拟 / 几何（随粒子数重建） ----------
+    let gpu, posVar, velVar, dtPos, dtVel, geo, points, uVel;
+    const COUNT_PRESETS = [
+      { w: 548, n: 300304 },  // 300K
+      { w: 633, n: 400689 },  // 400K
+      { w: 708, n: 501264 },  // 500K
+      { w: 775, n: 600625 },  // 600K
+      { w: 837, n: 700569 },  // 700K
+      { w: 894, n: 799236 }   // 800K（默认）
+    ];
+    function buildSim(w) {
+      WIDTH = w; PARTICLES = w * w;
+      // 销毁整个旧容器，而不在原容器中替换子节点。
+      // 这样旧 Points、材质、变换链或意外残留子节点都不可能继续参与 scene.render。
+      const oldGroup = group;
+      const oldRotation = oldGroup.rotation.clone();
+      scene.remove(oldGroup);
+      oldGroup.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+        else if (child.material) child.material.dispose();
+      });
+      oldGroup.clear();
+      group = new THREE.Group();
+      group.scale.setScalar(MODEL_SCALE);   // 切换形状时同样保持缩小后的初始化大小
+      group.rotation.copy(oldRotation);
+      scene.add(group);
+      points = null; geo = null;
+      renderUniforms.texturePosition.value = null;
+      renderUniforms.textureVelocity.value = null;
+      if (gpu && gpu.dispose) gpu.dispose();
+      gpu = new GPUComputationRenderer(WIDTH, WIDTH, renderer);
+      dtPos = gpu.createTexture();
+      dtVel = gpu.createTexture();
+      (function initTextures() {
+      const p = dtPos.image.data, v = dtVel.image.data;
+      for (let i = 0; i < PARTICLES; i++) {
+        // 按当前形状（球体/立方体/圆环/SVG）在内部均匀撒点，params.gap 控制球体分布半径
+        const pt = samplePoint();
+        p[i * 4 + 0] = pt[0];
+        p[i * 4 + 1] = pt[1];
+        p[i * 4 + 2] = pt[2];
+        p[i * 4 + 3] = Math.random() * 6.2831;          // 自发光相位 seed
+        v[i * 4 + 0] = 0; v[i * 4 + 1] = 0; v[i * 4 + 2] = 0; v[i * 4 + 3] = 1;
+      }
+    })();
+
+    const velShader = /* glsl */`
+      ${noiseGLSL}
+      ${shapeGLSL}
+      uniform float dt; uniform float uTime; uniform float uTurb; uniform float uVisc; uniform float uSpeed;
+      uniform vec3 uMouse; uniform float uMouseActive; uniform float uMouseForce;
+      uniform float uGravity; uniform vec3 uGravityDir;
+      void main(){
+        vec2 uv = gl_FragCoord.xy / resolution.xy;
+        vec3 pos = texture2D(texturePosition, uv).xyz;
+        vec3 vel = texture2D(textureVelocity, uv).xyz;
+
+        // 全局时间倍率：把“粒子速度”做成对力积分步长的缩放，而非在黏性之后乘速度
+        // —— 否则 uSpeed > 1/visc 时稳态方程分母 (1 - visc*uSpeed) 变负，速度失控。
+        float dtS = dt * uSpeed;
+
+        // 0) 重力（可调控强度与方向，帮助粒子脱离角落堆积、形成流动/沉降）
+        vel += uGravityDir * uGravity * dtS;
+
+        // 1) 流体平流：curl 噪声驱动速度场（无散度 -> 卷曲翻涌，而非孤立抖动）
+        // SVG（平面或三维）：轮廓尺寸远小于球体，curl 频率 0.5 产生的涡旋比整个形状还大，
+        // 会把整团粒子刚体化地推到边界，形成“贴边”。提高频率到 1.5，让涡旋尺度小于轮廓，
+        // 粒子在形状内部就能翻滚流动；XY 方向做能量补偿。Z 轴只在平面模式（uThickness≈0）锁住。
+        float curlFreq = (uShape == 3) ? 1.5 : 0.5;
+        vec3 curl = curlNoise(pos * curlFreq + vec3(0.0, uTime * 0.06, 0.0));
+        if (uShape == 3) { curl.xy *= 1.5; if (uThickness <= 0.0001) curl.z = 0.0; }
+        vel += curl * uTurb * 2.4 * dtS;
+
+        // 2) 基础几何使用共享边界碰撞；SVG 在位置积分中使用更大的安全边距，
+        // 避免所有粒子聚集到约束壳表面形成“第二层”。
+        float d = shapeSDF(pos);
+        float boundaryStart = (uShape == 3) ? -0.12 : -0.14;
+        if (d > boundaryStart) {
+          vec3 n = shapeNormal(pos);
+          if (length(n) > 1e-4) {
+            float vr = dot(vel, n);
+            if (vr > 0.0) vel -= n * vr * 1.08;     // 略微反弹，避免速度在边缘归零
+            float edge = smoothstep(boundaryStart, 0.0, d);
+            vel -= n * edge * (0.9 + uTurb * 0.35) * dtS;
+            if (d > 0.0) vel -= n * d * 16.0;       // 异常逸出时快速恢复
+          }
+        }
+        // 3) 鼠标斥力（换算到 group 局部空间后传入）
+        if (uMouseActive > 0.5) {
+          vec3 toP = pos - uMouse;
+          float dist = length(toP);
+          float rad = 1.8;
+          if (dist < rad) vel += normalize(toP + 1e-5) * (1.0 - dist / rad) * uMouseForce * dtS;
+        }
+
+        // 4) 粘性（流体阻尼）
+        vel *= uVisc;
+        if (uShape == 3 && uThickness <= 0.0001) vel.z = 0.0;
+
+        // 5) 限速：与速度倍率同尺度放宽，避免高速被硬性截断产生突跳；低速保留下限防爆炸
+        float sp = length(vel);
+        float spMax = 8.0 * max(uSpeed, 0.5);
+        if (sp > spMax) vel *= spMax / sp;
+
+        gl_FragColor = vec4(vel, 1.0);
+      }
+    `;
+
+    const posShader = /* glsl */`
+      ${shapeGLSL}
+      uniform float dt; uniform float uSpeed; uniform float uTurb;
+      void main(){
+        vec2 uv = gl_FragCoord.xy / resolution.xy;
+        vec4 pos = texture2D(texturePosition, uv);
+        vec4 vel = texture2D(textureVelocity, uv);
+        // 分步积分，并在每个子步强制保持在当前形状内部。
+        // SVG 的安全边距从 0.08 收紧到 0.02：硬边界退到完全不可见的壳内侧（fade 在 d>-0.08 全透明），
+        // 可见核心不再被一条远离边界的“内墙”挡住，从而能像球体一样自由翻滚。
+        float margin = (uShape == 3) ? 0.02 : 0.006;
+        vec3 stepMove = vel.xyz * dt * 0.25;
+        for (int stepIndex = 0; stepIndex < 4; stepIndex++) {
+          vec3 candidate = pos.xyz + stepMove;
+          float d = shapeSDF(candidate);
+          if (d <= -margin) {
+            pos.xyz = candidate;
+          } else {
+            // 沿本子步二分查找最后一个合法点，而不是从外部依赖 SDF 梯度拉回。
+            vec3 inside = pos.xyz;
+            vec3 outside = candidate;
+            for (int searchIndex = 0; searchIndex < 4; searchIndex++) {
+              vec3 mid = (inside + outside) * 0.5;
+              if (shapeSDF(mid) <= -margin) inside = mid;
+              else outside = mid;
+            }
+            pos.xyz = inside;
+          }
+        }
+        if (uShape == 3 && uThickness <= 0.0001) pos.z = 0.0;
+        gl_FragColor = pos;
+      }
+    `;
+
+    velVar = gpu.addVariable('textureVelocity', velShader, dtVel);
+    posVar = gpu.addVariable('texturePosition', posShader, dtPos);
+    gpu.setVariableDependencies(velVar, [posVar, velVar]);
+    gpu.setVariableDependencies(posVar, [posVar, velVar]);
+    Object.assign(velVar.material.uniforms, {
+      dt: { value: 0.016 }, uTime: { value: 0 }, uTurb: { value: params.turb },
+      uVisc: { value: params.visc }, uSpeed: { value: params.speed }, uMouse: { value: new THREE.Vector3(999, 999, 999) }, uMouseActive: { value: 0 },
+      uMouseForce: { value: params.mouseForce },
+      uGravity: { value: params.gravity }, uGravityDir: { value: new THREE.Vector3(Math.cos(params.gravAngle * Math.PI / 180), Math.sin(params.gravAngle * Math.PI / 180), 0) },
+      uShape: { value: shapeInt }, uBox: { value: new THREE.Vector3(1.8, 1.8, 1.8) },
+      uTorusR: { value: 1.6 }, uTorusr: { value: 0.6 },
+      uSdfTex: { value: rigidSdfTex }, uSdfSpan: { value: SDF_SPAN }, uThickness: { value: params.particleDepth }
+    });
+    Object.assign(posVar.material.uniforms, {
+      dt: { value: 0.016 }, uSpeed: { value: params.speed }, uTurb: { value: params.turb },
+      uShape: { value: shapeInt }, uBox: { value: new THREE.Vector3(1.8, 1.8, 1.8) },
+      uTorusR: { value: 1.6 }, uTorusr: { value: 0.6 },
+      uSdfTex: { value: rigidSdfTex }, uSdfSpan: { value: SDF_SPAN }, uThickness: { value: params.particleDepth }
+    });
+    uVel = velVar.material.uniforms;   // 供外部主循环直接引用
+    const err = gpu.init();
+    if (err) {
+      console.error('GPUComputationRenderer:', err);
+      const d = document.getElementById('debug'); d.style.display = 'block';
+      d.textContent += 'GPU init: ' + err + '\n';
+    }
+
+    // ---------- 渲染粒子 ----------
+    geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(PARTICLES * 3);
+    const references = new Float32Array(PARTICLES * 2);
+    for (let i = 0; i < PARTICLES; i++) {
+      references[i * 2 + 0] = (i % WIDTH) / WIDTH;
+      references[i * 2 + 1] = Math.floor(i / WIDTH) / WIDTH;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('reference', new THREE.BufferAttribute(references, 2));
+
+    // 渲染用的 renderUniforms 已在上方定义为模块级常量（不随粒子数重建）
+    const renderMat = new THREE.ShaderMaterial({
+      uniforms: renderUniforms,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${shapeGLSL}
+        ${noiseGLSL}
+        attribute vec2 reference;
+        uniform sampler2D texturePosition; uniform sampler2D textureVelocity;
+        uniform float uTime; uniform float uSize; uniform float uPixelRatio; uniform float uEmit;
+        uniform vec3 uColorA; uniform vec3 uColorMid; uniform vec3 uColorB;
+        uniform float uBoundaryFade;
+        uniform float uSvgBoost;
+        uniform float uSvgAlpha;
+        varying float vBright; varying vec3 vColor; varying float vBoundaryAlpha;
+        void main(){
+          vec3 pos = texture2D(texturePosition, reference).xyz;
+          // 仅 SVG 在渲染期做约束壳淡出，避免球/立方/圆环的边界被削掉。
+          // fade 从约束壳表面（d=0）到 2*fade 深度（d=-2*fade）完全透明→不透明，
+          // 这样紧贴壳的堆积层（d≈-margin）必然落在透明区。
+          float dShell = shapeSDF(pos);
+          vBoundaryAlpha = (uShape == 3) ? smoothstep(-uBoundaryFade, -2.0 * uBoundaryFade, dShell) : 1.0;
+          vec3 vel = texture2D(textureVelocity, reference).xyz;
+          float speed = length(vel);
+          // 自发光由噪声控制（随流体位置流动 -> 亮团自然游移）
+          float em  = snoise(pos * 0.55 + vec3(0.0, uTime * 0.22, 0.0));
+          float em2 = snoise(pos * 1.4  - vec3(uTime * 0.18));
+          float bright = 0.2 + 0.68 * smoothstep(-0.35, 0.9, em * 0.7 + em2 * 0.3 + speed * 0.07);
+          bright *= 0.85 + 0.15 * sin(uTime * 1.4 + reference.x * 30.0);   // 呼吸脉动
+          bright *= uEmit;
+          vBright = bright;
+          // 模型空间三色渐变；轻微噪声让色带随流场自然交融，不形成生硬水平线。
+          float gradientT = clamp(pos.y / 3.8 + 0.5 + em * 0.06, 0.0, 1.0);
+          vec3 gradientColor = gradientT < 0.5
+            ? mix(uColorA, uColorMid, smoothstep(0.0, 0.5, gradientT))
+            : mix(uColorMid, uColorB, smoothstep(0.5, 1.0, gradientT));
+          vec3 c3 = vec3(1.0);                 // 仅最亮核心趋近白热
+          vec3 col = mix(gradientColor, uColorB, smoothstep(0.75, 1.25, bright) * 0.28);
+          col = mix(col, c3, smoothstep(1.35, 1.9, bright));
+          vColor = col * bright;
+          vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+          gl_Position = projectionMatrix * mv;
+          // SVG 薄片（厚度 0.36 的拉伸棱柱）深度重叠远小于实心球，additive 累积弱 -> 偏暗。
+          // 放大点尺寸补偿覆盖密度，配合片元 uSvgBoost/uSvgAlpha 提亮，使其整体亮度贴近普通 mesh。
+          float sizeBoost = (uShape == 3) ? 1.15 : 1.0;
+          gl_PointSize = uSize * (0.6 + 0.5 * bright) * sizeBoost * uPixelRatio * (300.0 / -mv.z);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        varying float vBright; varying vec3 vColor; varying float vBoundaryAlpha;
+        uniform float uGlobalFade;
+        uniform int uShape; uniform float uSvgBoost; uniform float uSvgAlpha;
+        void main(){
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          float alpha = smoothstep(0.5, 0.0, d);
+          float core = smoothstep(0.18, 0.0, d);
+          vec3 c = vColor + core * vBright * 0.25;
+          // SVG 亮度补偿：仅对 uShape==3 在片元阶段额外提亮（颜色与不透明度都补），
+          // 抵消约束壳淡出（砍掉边缘层）与薄片密度损失导致的整体偏暗，使其贴近普通 mesh 观感。
+          // 补偿施加在边界淡出之前，因此 vBoundaryAlpha 仍保留"防重层"效果（壳表面那层依旧不可见）。
+          if (uShape == 3) { c *= uSvgBoost; alpha *= uSvgAlpha; }
+          // SVG 约束壳附近粒子淡出：壳表面及其内部紧贴壳的一层不可见，避免边界堆积形成"第二层"。
+          alpha *= vBoundaryAlpha;
+          // 形状切换整体淡入淡出（过渡期间 uGlobalFade 由 JS 驱动）
+          alpha *= uGlobalFade;
+          gl_FragColor = vec4(c, alpha);
+        }
+      `
+    });
+    points = new THREE.Points(geo, renderMat);
+    points.userData.isParticleLayer = true;
+    points.frustumCulled = false;
+    group.add(points);
+    // 可从控制台/自动化测试读取，验证任意切换后只有一个粒子渲染层。
+    window.__particleDebug = {
+      layerCount: () => group.children.filter(child => child.isPoints).length,
+      shape: () => shapeMode,
+      particles: () => PARTICLES
+    };
+    }
+
+    // ---------- 后处理辉光 ----------
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.0, 0.6, 0.22);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    // ---------- 交互 ----------
+    // uVel 在 buildSim() 内赋值（模块级 let）
+    const mouseNDC = new THREE.Vector2(0, 0);
+    let mouseActive = 0;
+    renderer.domElement.addEventListener('pointermove', e => {
+      mouseNDC.x = (e.clientX / innerWidth) * 2 - 1;
+      mouseNDC.y = -(e.clientY / innerHeight) * 2 + 1;
+      mouseActive = 1;
+    });
+    renderer.domElement.addEventListener('pointerleave', () => { mouseActive = 0; });
+
+    const params = { turb: 2.7, visc: 0.995, bloom: 0.15, spin: 0.1, emit: 0.6, size: 0.05, gap: 1.0, speed: 3.0, mouseForce: 0.15, particleDepth: 0.36, paused: false, gravity: 0, gravAngle: 360, mirrorX: false };
+    renderUniforms.uThickness.value = params.particleDepth;
+    renderUniforms.uEmit.value = params.emit;       // 启动即采用默认自发光
+    bloomPass.strength = params.bloom;              // 启动即采用默认辉光（UnrealBloomPass 初始强度为 1.0）
+    // GPUComputationRenderer 使用内部双缓冲纹理。仅修改最初的 dtPos/dtVel 再 compute，
+    // 无法可靠覆盖当前读写缓冲，因此切换边界时必须完整重建模拟状态。
+    function resetParticlesForShape() {
+      buildSim(WIDTH);
+    }
+    buildSim(COUNT_PRESETS[5].w);   // 初始化粒子模拟（默认 800K）
+    const $ = id => document.getElementById(id);
+    $('turb').addEventListener('input', e => {
+      params.turb = +e.target.value;
+      uVel.uTurb.value = params.turb;
+      posVar.material.uniforms.uTurb.value = params.turb;
+      $('turbv').textContent = params.turb.toFixed(2);
+    });
+    $('visc').addEventListener('input', e => { params.visc = +e.target.value; uVel.uVisc.value = params.visc; $('viscv').textContent = params.visc.toFixed(3); });
+    $('bloom').addEventListener('input', e => { params.bloom = +e.target.value; bloomPass.strength = params.bloom; $('bloomv').textContent = params.bloom.toFixed(2); });
+    $('spin').addEventListener('input', e => { params.spin = +e.target.value; $('spinv').textContent = params.spin.toFixed(2); });
+    $('emit').addEventListener('input', e => { params.emit = +e.target.value; renderUniforms.uEmit.value = params.emit; $('emitv').textContent = params.emit.toFixed(2); });
+    $('size').addEventListener('input', e => { params.size = +e.target.value; renderUniforms.uSize.value = params.size; $('sizev').textContent = params.size.toFixed(3); });
+    $('speed').addEventListener('input', e => { params.speed = +e.target.value; uVel.uSpeed.value = params.speed; if (posVar) posVar.material.uniforms.uSpeed.value = params.speed; $('speedv').textContent = params.speed.toFixed(2); });
+    $('mouseForce').addEventListener('input', e => {
+      params.mouseForce = +e.target.value;
+      uVel.uMouseForce.value = params.mouseForce;
+      $('mouseForcev').textContent = params.mouseForce.toFixed(2);
+    });
+    $('gravity').addEventListener('input', e => { params.gravity = +e.target.value; uVel.uGravity.value = params.gravity; $('gravv').textContent = params.gravity.toFixed(2); });
+    $('gravdir').addEventListener('input', e => {
+      params.gravAngle = +e.target.value;
+      const a = params.gravAngle * Math.PI / 180;
+      uVel.uGravityDir.value.set(Math.cos(a), Math.sin(a), 0);
+      $('gravdirv').textContent = params.gravAngle + '°';
+    });
+    $('gap').addEventListener('input', e => {
+      params.gap = +e.target.value;
+      $('gapv').textContent = Math.round(params.gap * 100) + '%';
+    });
+    $('gap').addEventListener('change', () => {
+      resetParticlesForShape();
+    });
+    $('colA').addEventListener('input', e => { renderUniforms.uColorA.value.set(e.target.value); });
+    $('colMid').addEventListener('input', e => { renderUniforms.uColorMid.value.set(e.target.value); });
+    $('colB').addEventListener('input', e => { renderUniforms.uColorB.value.set(e.target.value); });
+    $('bg').addEventListener('input', e => { setBackground(e.target.value); });
+    $('bgGlow').addEventListener('input', e => { setBackground(bgBase, e.target.value); });
+
+    // ---------- 颜色预设点：tab 上方 5 个随机粒子渐变配色，点击快速切换（带平滑过渡） ----------
+    (function () {
+      const wrap = document.getElementById('colorPresets');
+      if (!wrap) return;
+      // 生成一组协调又好看的随机渐变（HSL 取色，low 饱和偏暗、high 接近高亮白）
+      function randScheme() {
+        const h = Math.random() * 360;
+        const h2 = (h + (Math.random() * 60 - 30) + 360) % 360;
+        const low = '#' + new THREE.Color().setHSL(h / 360, 0.78, 0.40 + Math.random() * 0.10).getHexString();
+        const mid = '#' + new THREE.Color().setHSL(h2 / 360, 0.82, 0.52 + Math.random() * 0.10).getHexString();
+        const high = '#' + new THREE.Color().setHSL(h / 360, 0.90, 0.82 + Math.random() * 0.06).getHexString();
+        return { low, mid, high };
+      }
+      const defaultScheme = { low: '#3457d5', mid: '#5a94fa', high: '#c8f0ff' };
+      const schemes = [defaultScheme, ...Array.from({ length: 5 }, randScheme)];
+
+      // 平滑地把当前配色过渡到目标配色（颜色变化演示效果）
+      let colorAnim = null;
+      function applyColorScheme(low, mid, high) {
+        const ta = new THREE.Color(low), tm = new THREE.Color(mid), tb = new THREE.Color(high);
+        const sa = renderUniforms.uColorA.value.clone();
+        const sm = renderUniforms.uColorMid.value.clone();
+        const sb = renderUniforms.uColorB.value.clone();
+        const dur = 420, start = performance.now();
+        if (colorAnim) cancelAnimationFrame(colorAnim);
+        function step(now) {
+          const t = Math.min(1, (now - start) / dur);
+          const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+          renderUniforms.uColorA.value.copy(sa).lerp(ta, e);
+          renderUniforms.uColorMid.value.copy(sm).lerp(tm, e);
+          renderUniforms.uColorB.value.copy(sb).lerp(tb, e);
+          if (t < 1) colorAnim = requestAnimationFrame(step); else colorAnim = null;
+        }
+        colorAnim = requestAnimationFrame(step);
+        // 同步配置面板里的颜色输入与导出数据
+        $('colA').value = low; $('colMid').value = mid; $('colB').value = high;
+        params.colors = { low, mid, high };
+        if (typeof refreshParamDump === 'function') refreshParamDump();
+      }
+
+      schemes.forEach((s, i) => {
+        const dot = document.createElement('div');
+        dot.className = 'color-dot' + (i === 0 ? ' active' : '');
+        dot.title = i === 0 ? 'Default' : 'Apply gradient ' + i;
+        dot.style.background = 'linear-gradient(135deg,' + s.low + ' 0%,' + s.mid + ' 50%,' + s.high + ' 100%)';
+        dot.addEventListener('click', () => {
+          wrap.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+          dot.classList.add('active');
+          applyColorScheme(s.low, s.mid, s.high);
+        });
+        wrap.appendChild(dot);
+      });
+    })();
+    const countLabels = ['300K', '400K', '500K', '600K', '700K', '800K'];
+    $('count').addEventListener('input', e => {
+      const idx = +e.target.value;
+      $('countv').textContent = countLabels[idx];
+      buildSim(COUNT_PRESETS[idx].w);
+    });
+    function setShape(n) {
+      shapeInt = n;
+      if (uVel) uVel.uShape.value = n;
+      if (posVar) posVar.material.uniforms.uShape.value = n;
+      renderUniforms.uShape.value = n;
+      // 切换到 SVG 形状时同步距离场纹理 / 厚度到两个计算 shader 与渲染 shader
+      if (n === 3 && rigidSdfTex) {
+        if (uVel) { uVel.uSdfTex.value = rigidSdfTex; uVel.uSdfSpan.value = SDF_SPAN; uVel.uThickness.value = params.particleDepth; }
+        if (posVar) { posVar.material.uniforms.uSdfTex.value = rigidSdfTex; posVar.material.uniforms.uSdfSpan.value = SDF_SPAN; posVar.material.uniforms.uThickness.value = params.particleDepth; }
+        renderUniforms.uSdfTex.value = rigidSdfTex;
+        renderUniforms.uSdfSpan.value = SDF_SPAN;
+        renderUniforms.uThickness.value = params.particleDepth;
+      }
+    }
+    // ---------- 形状 tab 切换（含平滑淡入淡出过渡） ----------
+    function setActiveTab(key) {
+      document.querySelectorAll('#shapebar button').forEach(b => {
+        b.classList.toggle('active', b.dataset.shape === key);
+      });
+    }
+    function applyShape(key) {
+      if (key === 'sphere' || key === 'box' || key === 'torus') {
+        shapeMode = key;
+        setShape(key === 'sphere' ? 0 : key === 'box' ? 1 : 2);
+        resetParticlesForShape();
+      } else { // apple | nike 内置 SVG 模板
+        if (!loadSvgTemplate(key)) { console.error('模板解析失败:', key); return; }
+        params.particleDepth = 0.36;
+        $('particleDepth').value = '0.36';
+        $('particleDepthv').textContent = '0.36';
+        shapeMode = 'svg';
+        setShape(3);
+        if (uVel) { uVel.uSdfTex.value = rigidSdfTex; uVel.uSdfSpan.value = SDF_SPAN; uVel.uThickness.value = params.particleDepth; }
+        if (posVar) { posVar.material.uniforms.uSdfTex.value = rigidSdfTex; posVar.material.uniforms.uSdfSpan.value = SDF_SPAN; posVar.material.uniforms.uThickness.value = params.particleDepth; }
+        renderUniforms.uSdfTex.value = rigidSdfTex;
+        renderUniforms.uSdfSpan.value = SDF_SPAN;
+        renderUniforms.uThickness.value = params.particleDepth;
+        resetParticlesForShape();
+      }
+      currentShapeKey = key;
+    }
+    let shapeFade = null;   // { t, dur, applied, apply }
+    function switchShape(key) {
+      if (key === currentShapeKey && !shapeFade) return;
+      shapeFade = { t: 0, dur: 0.32, applied: false, apply: () => applyShape(key) };
+    }
+    document.querySelectorAll('#shapebar button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.shape;
+        if (!key) return; // 跳过设置按钮
+        setActiveTab(key);
+        switchShape(key);
+      });
+    });
+    $('mirrorx').addEventListener('change', e => {
+      params.mirrorX = e.target.checked;
+      if (shapeMode === 'svg' && rawSvgContours) {
+        setSvgContours(rawSvgContours, params.mirrorX);
+        if (uVel) { uVel.uSdfTex.value = rigidSdfTex; uVel.uSdfSpan.value = SDF_SPAN; uVel.uThickness.value = params.particleDepth; }
+        if (posVar) { posVar.material.uniforms.uSdfTex.value = rigidSdfTex; posVar.material.uniforms.uSdfSpan.value = SDF_SPAN; posVar.material.uniforms.uThickness.value = params.particleDepth; }
+        renderUniforms.uSdfTex.value = rigidSdfTex;
+        renderUniforms.uSdfSpan.value = SDF_SPAN;
+        renderUniforms.uThickness.value = params.particleDepth;
+        resetParticlesForShape();
+      }
+    });
+    $('svgfile').addEventListener('change', e => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const raw = parseSVGToContours(reader.result);
+        if (!raw || !raw.length) { console.error('无法解析 SVG 轮廓'); return; }
+        rawSvgContours = raw;
+        // 上传 SVG 后默认给 0.36 的拉伸厚度：使其成为有体积的三维棱柱而非二维平面。
+        params.particleDepth = 0.36;
+        $('particleDepth').value = '0.36';
+        $('particleDepthv').textContent = '0.36';
+        setSvgContours(raw, params.mirrorX);
+        shapeMode = 'svg'; setShape(3);
+        if (uVel) { uVel.uSdfTex.value = rigidSdfTex; uVel.uSdfSpan.value = SDF_SPAN; uVel.uThickness.value = params.particleDepth; }
+        if (posVar) { posVar.material.uniforms.uSdfTex.value = rigidSdfTex; posVar.material.uniforms.uSdfSpan.value = SDF_SPAN; posVar.material.uniforms.uThickness.value = params.particleDepth; }
+        renderUniforms.uSdfTex.value = rigidSdfTex;
+        renderUniforms.uSdfSpan.value = SDF_SPAN;
+        renderUniforms.uThickness.value = params.particleDepth;
+        resetParticlesForShape();
+        // 自定义上传不是内置模板，清除 tab 高亮
+        setActiveTab(null); currentShapeKey = 'svg-custom';
+      };
+      reader.readAsText(file);   // 读取文本解析矢量轮廓，而非栅格化成蒙版
+    });
+    $('pause').addEventListener('click', () => { params.paused = !params.paused; });
+    $('particleDepth').addEventListener('input', e => {
+      params.particleDepth = +e.target.value;
+      $('particleDepthv').textContent = params.particleDepth.toFixed(2);
+      if (uVel) uVel.uThickness.value = params.particleDepth;
+      if (posVar) posVar.material.uniforms.uThickness.value = params.particleDepth;
+      renderUniforms.uThickness.value = params.particleDepth;
+    });
+    $('particleDepth').addEventListener('change', () => {
+      resetParticlesForShape();
+    });
+
+    // ---------- 参数导出：实时 JSON 面板 + 复制按钮 ----------
+    function getConfig() {
+      const hex = id => ((document.getElementById(id) || {}).value || '').replace('#', '');
+      return {
+        shape: shapeMode,
+        count: PARTICLES,
+        width: WIDTH,
+        params: { ...params },
+        colors: {
+          low: '#' + hex('colA'),
+          mid: '#' + hex('colMid'),
+          high: '#' + hex('colB'),
+          background: '#' + hex('bg')
+        }
+      };
+    }
+    let _lastCfg = '';
+    function refreshParamDump() {
+      const cfg = JSON.stringify(getConfig(), null, 2);
+      if (cfg !== _lastCfg) { _lastCfg = cfg; const pd = document.getElementById('paramDump'); if (pd) pd.textContent = cfg; }
+    }
+    const copyBtn = $('copyParams');
+    copyBtn.addEventListener('click', async () => {
+      const text = JSON.stringify(getConfig(), null, 2);
+      try {
+        await navigator.clipboard.writeText(text);
+        const old = copyBtn.textContent; copyBtn.textContent = '已复制 ✓';
+        setTimeout(() => { copyBtn.textContent = old; }, 1300);
+      } catch (e) {
+        const pd = document.getElementById('paramDump');
+        if (pd) { pd.focus(); if (document.execCommand) { const r = document.createRange(); r.selectNodeContents(pd); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy'); } }
+        console.log('CLIPBOARD_FALLBACK:\n' + text);
+      }
+    });
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      fitCameraToAspect(); applyViewShift();
+      renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+      renderUniforms.uPixelRatio.value = renderer.getPixelRatio();
+    });
+
+    // ---------- 主循环 ----------
+    const clock = new THREE.Clock();
+    const tmp = new THREE.Vector3();
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = Math.min(clock.getDelta(), 0.033);
+      const t = clock.elapsedTime;
+      // 形状切换淡入淡出：淡出到 0 时应用新形状并重置粒子（重置突变被透明遮住），随后淡入。
+      if (shapeFade) {
+        shapeFade.t += delta;
+        const k = Math.min(shapeFade.t / shapeFade.dur, 1);
+        if (!shapeFade.applied) {
+          renderUniforms.uGlobalFade.value = 1 - k;
+          if (k >= 1) { shapeFade.apply(); shapeFade.applied = true; shapeFade.t = 0; }
+        } else {
+          renderUniforms.uGlobalFade.value = k;
+          if (k >= 1) { shapeFade = null; renderUniforms.uGlobalFade.value = 1; }
+        }
+      }
+      if (!params.paused) {
+        const dt = Math.min(delta, 0.02);
+        uVel.dt.value = dt; uVel.uTime.value = t;
+        posVar.material.uniforms.dt.value = dt;
+
+        // 鼠标 -> 球壳附近的世界点 -> 换算到 group 局部空间
+        if (mouseActive) {
+          tmp.set(mouseNDC.x, mouseNDC.y, 0.5).unproject(camera);
+          tmp.sub(camera.position).normalize();
+          const dist = -camera.position.z / (tmp.z || 1e-3);
+          tmp.multiplyScalar(dist).add(camera.position);
+          group.worldToLocal(tmp);
+          uVel.uMouse.value.copy(tmp);
+          uVel.uMouseActive.value = 1;
+        } else {
+          uVel.uMouseActive.value = 0;
+        }
+
+        gpu.compute();
+        renderUniforms.texturePosition.value = gpu.getCurrentRenderTarget(posVar).texture;
+        renderUniforms.textureVelocity.value = gpu.getCurrentRenderTarget(velVar).texture;
+        renderUniforms.uTime.value = t;
+
+        group.rotation.y += params.spin * 0.25 * dt;
+      }
+      controls.update();
+      composer.render();
+      refreshParamDump();   // 实时刷新参数面板 JSON（内部仅在变化时写 DOM）
+    }
+    animate();
+  </script>
+</body>
+</html>
