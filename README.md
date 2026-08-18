@@ -16,7 +16,7 @@ Fluidity 是一个基于 Three.js GPGPU 的实时流体粒子交互演示。数�
 
 ## 在线演示
 
-> https://4a33da1d669e4c12adc62a5483406114.gz3.agentos-app.net
+> https://skentsun.github.io/fluidity-orb-threejs/
 
 ## 本地运行（用法）
 

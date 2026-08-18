@@ -6,3 +6,6 @@
 !LICENSE
 !deploy/
 !deploy/index.html
+!.github/
+!.github/workflows/
+!.github/workflows/deploy.yml
